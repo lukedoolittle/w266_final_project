@@ -180,8 +180,8 @@ class QAModel:
 
         numberOfBatches = sum([1 for i in trainingDataGenerator()])
 
-        iteration = 0
         for epoch in trange(epoch + 1, numberOfEpochs + 1, desc='Epochs', unit='epoch'):
+            iteration = 0
             batches = tqdm(
                 trainingDataGenerator(),
                 total=numberOfBatches,
