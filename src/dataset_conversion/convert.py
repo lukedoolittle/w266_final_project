@@ -7,6 +7,7 @@ import argparse
 import json
 import csv
 from nltk.tokenize import word_tokenize
+from string import ascii_uppercase as letters
 
 
 DATA_DIR = '../../../data/'
@@ -21,6 +22,12 @@ row_dict = {
 
 
 def get_answer_token_ranges(para_tokens, answ_tokens):
+    '''
+    Returns the start and end position of answer tokens within a tokenized
+    input paragraph. Formatted as "start_pos:end_pos"
+
+    Returns None if the answer token does not exist in the input
+    '''
     answer_token_ranges = ''
     first_idx = next(
         (i for i, t in enumerate(para_tokens) if answ_tokens[0] == t),
@@ -40,12 +47,12 @@ def get_answer_token_ranges(para_tokens, answ_tokens):
             answer_token_ranges = (
                 str(first_idx) + ":" + str(first_idx + len(answ_tokens)))
     if not answer_token_ranges:
-        print(para_tokens, answ_tokens)
+        pass
+        # Ignore answers that don't appear in input tokens
     return answer_token_ranges
 
 
 def squad_parse_convert(input_dict, csv_out):
-
     with open(SQUAD_DIR + csv_out, 'w') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=CSV_HEADER)
         writer.writeheader()
@@ -67,14 +74,15 @@ def squad_parse_convert(input_dict, csv_out):
                             answer_token_ranges = get_answer_token_ranges(
                                 tokens,
                                 answ_tokens)
-
-                            row_dict['story_id'] = story_id
-                            row_dict['story_text'] = story_text
-                            row_dict['question'] = question
-                            row_dict['answer_token_ranges'] = answer_token_ranges
-                            writer.writerow(row_dict)
+                            if answer_token_ranges:
+                                row_dict['story_id'] = story_id
+                                row_dict['story_text'] = story_text
+                                row_dict['question'] = question
+                                row_dict['answer_token_ranges'] = answer_token_ranges
+                                writer.writerow(row_dict)
 
                         prev_ans = answer['text']
+
 
 def convert_squad():
     '''
@@ -104,8 +112,8 @@ def convert_squad():
 
 
 def marco_parse_convert(input_dict, csv_out):
-
-    with open(SQUAD_DIR + csv_out, 'w') as csvfile:
+    with open(MARCO_DIR + csv_out, 'w') as csvfile:
+        output = {'entries': 0, 'e_written': 0, 'err_count': 0}
         writer = csv.DictWriter(csvfile, fieldnames=CSV_HEADER)
         writer.writeheader()
 
@@ -113,6 +121,7 @@ def marco_parse_convert(input_dict, csv_out):
             story_id = query.get('query_id', None)
             question = query.get('query', None)
             if not story_id or not question:
+                output['err_count'] += 1
                 continue  # Skip ahead if data is missing
 
             sel_passages = []
@@ -123,20 +132,27 @@ def marco_parse_convert(input_dict, csv_out):
                         sel_passages.append(passage_text)
 
             if not sel_passages:
+                output['err_count'] += 1
                 continue  # Skip ahead if data is missing
 
             for answer in query['answers']:
                 answ_tokens = word_tokenize(answer)
-                for passage in sel_passages:
+                for i, passage in enumerate(sel_passages):
                     answer_token_ranges = get_answer_token_ranges(
                         word_tokenize(passage),
                         answ_tokens)
 
-                    row_dict['story_id'] = story_id
-                    row_dict['story_text'] = passage
-                    row_dict['question'] = question
-                    row_dict['answer_token_ranges'] = answer_token_ranges
-                    writer.writerow(row_dict)
+                    if answer_token_ranges:
+                        row_dict['story_id'] = str(story_id) + letters[i]
+                        row_dict['story_text'] = passage
+                        row_dict['question'] = question
+                        row_dict['answer_token_ranges'] = answer_token_ranges
+                        writer.writerow(row_dict)
+                        output['e_written'] += 1
+                    else:
+                        output['err_count'] += 1
+                    output['entries'] += 1
+    return output
 
 
 def convert_marco():
@@ -163,9 +179,9 @@ def convert_marco():
 
     # Parse dataset files
     print("Converting", dev_in, "to", dev_out)
-    marco_parse_convert(dev_dict, dev_out)
+    print(marco_parse_convert(dev_dict, dev_out))
     print("Converting", train_in, "to", train_out)
-    marco_parse_convert(train_dict, train_out)
+    print(marco_parse_convert(train_dict, train_out))
 
 
 def main(**kwargs):
