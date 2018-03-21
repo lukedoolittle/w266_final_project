@@ -13,6 +13,35 @@ DATA_DIR = '../../../data/'
 SQUAD_DIR = DATA_DIR + 'squad/'
 MARCO_DIR = DATA_DIR + 'marco/'
 CSV_HEADER = ['story_id', 'story_text', 'question', 'answer_token_ranges']
+row_dict = {
+    'story_id': '',
+    'story_text': '',
+    'question': '',
+    'answer_token_ranges': ''}
+
+
+def get_answer_token_ranges(para_tokens, answ_tokens):
+    answer_token_ranges = ''
+    first_idx = next(
+        (i for i, t in enumerate(para_tokens) if answ_tokens[0] == t),
+        None)  # Get index of answer token or None
+    # Check index
+    if first_idx is not None:
+        # Found exact match
+        answer_token_ranges = (
+            str(first_idx) + ":" + str(first_idx + len(answ_tokens)))
+    else:
+        # Couldn't find exact match, check if answer is substring
+        # of token
+        for i, token in enumerate(para_tokens):
+            if answ_tokens[0] in token:
+                first_idx = i
+        if first_idx:
+            answer_token_ranges = (
+                str(first_idx) + ":" + str(first_idx + len(answ_tokens)))
+    if not answer_token_ranges:
+        print(para_tokens, answ_tokens)
+    return answer_token_ranges
 
 
 def squad_parse_convert(input_dict, csv_out):
@@ -21,12 +50,6 @@ def squad_parse_convert(input_dict, csv_out):
         writer = csv.DictWriter(csvfile, fieldnames=CSV_HEADER)
         writer.writeheader()
 
-        row_dict = {
-            'story_id': '',
-            'story_text': '',
-            'question': '',
-            'answer_token_ranges': ''}
-        count=0
         # Parse file and convert
         for entry in input_dict['data']:
             for paragraph in entry['paragraphs']:
@@ -41,26 +64,9 @@ def squad_parse_convert(input_dict, csv_out):
                     for answer in qa['answers']:
                         answ_tokens = word_tokenize(answer['text'])
                         if answer['text'] != prev_ans:
-                            if count < 10:
-                                print("answer['text']", answer['text'], "prev_ans", prev_ans, answer['text'] != prev_ans)
-                                count += 1
-                            first_idx = next(
-                                (i for i, t in enumerate(tokens) if answ_tokens[0] == t),
-                                None)  # Get index of answer token or None
-                            # Check index
-                            if first_idx is not None:
-                                # Found exact match
-                                answer_token_ranges = (
-                                    str(first_idx) + ":" + str(first_idx + len(answ_tokens)))
-                            else:
-                                # Couldn't find exact match, check if answer is substring
-                                # of token
-                                for i, token in enumerate(tokens):
-                                    if answ_tokens[0] in token:
-                                        first_idx = i
-                                if first_idx:
-                                    answer_token_ranges = (
-                                        str(first_idx) + ":" + str(first_idx + len(answ_tokens)))
+                            answer_token_ranges = get_answer_token_ranges(
+                                tokens,
+                                answ_tokens)
 
                             row_dict['story_id'] = story_id
                             row_dict['story_text'] = story_text
@@ -97,11 +103,69 @@ def convert_squad():
     squad_parse_convert(train_dict, train_out)
 
 
+def marco_parse_convert(input_dict, csv_out):
+
+    with open(SQUAD_DIR + csv_out, 'w') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=CSV_HEADER)
+        writer.writeheader()
+
+        for query in input_dict:
+            story_id = query.get('query_id', None)
+            question = query.get('query', None)
+            if not story_id or not question:
+                continue  # Skip ahead if data is missing
+
+            sel_passages = []
+            for passage in query['passages']:  # Ignore non-selected passages
+                if passage.get('is_selected', 0) == 1:
+                    passage_text = passage.get('passage_text', None)
+                    if passage_text:
+                        sel_passages.append(passage_text)
+
+            if not sel_passages:
+                continue  # Skip ahead if data is missing
+
+            for answer in query['answers']:
+                answ_tokens = word_tokenize(answer)
+                for passage in sel_passages:
+                    answer_token_ranges = get_answer_token_ranges(
+                        word_tokenize(passage),
+                        answ_tokens)
+
+                    row_dict['story_id'] = story_id
+                    row_dict['story_text'] = passage
+                    row_dict['question'] = question
+                    row_dict['answer_token_ranges'] = answer_token_ranges
+                    writer.writerow(row_dict)
+
+
 def convert_marco():
     '''
     Convert data from the marco dataset to the correct format
     '''
-    pass
+    dev_in = 'dev_v2.0_well_formed.json'
+    train_in = 'train_v2.0_well_formed.json'
+
+    dev_out = 'dev_converted.csv'
+    train_out = 'train_converted.csv'
+
+    # Open the dataset files
+    try:
+        dev_f = open(MARCO_DIR + dev_in, 'r')
+        train_f = open(MARCO_DIR + train_in, 'r')
+    except IOError as e:
+        print(e)
+        exit()
+    with dev_f:
+        dev_dict = json.load(dev_f)
+    with train_f:
+        train_dict = json.load(train_f)
+
+    # Parse dataset files
+    print("Converting", dev_in, "to", dev_out)
+    marco_parse_convert(dev_dict, dev_out)
+    print("Converting", train_in, "to", train_out)
+    marco_parse_convert(train_dict, train_out)
 
 
 def main(**kwargs):
