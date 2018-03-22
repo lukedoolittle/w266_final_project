@@ -19,6 +19,36 @@ class QAData:
         self._embedding = embedding
         self._maxBatchCount = maxBatchCount
 
+    def expand_answers(
+            self,
+            batch: InputBatch,
+            answers):
+        stories = []
+
+        for i in range(batch.size):
+            split_answers = []
+            last = None
+            for j, tag in enumerate(answers[i]):
+                if tag:
+                    if last != j - 1:
+                        split_answers.append([])
+                    split_answers[-1].append(j)
+                    last = j
+
+            for answerIndices in split_answers:
+                stories.append(Story(
+                    batch.documents.ids[i], 
+                    batch.documents.text[i], 
+                    batch.documents.words[i], 
+                    ' '.join(batch.documents.words[i][i] 
+                                        for i 
+                                        in answerIndices), 
+                    answerIndices, 
+                    '', 
+                    []))
+
+        return self._FormatBatchForModelInput(stories)
+
     def GenerateModelInputData(
             self,
             dataPath: str) -> Generator[InputBatch, None, None]:
