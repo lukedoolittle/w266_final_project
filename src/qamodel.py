@@ -7,10 +7,7 @@ from tqdm import tqdm, trange
 import tensorflow as tf
 import logging
 
-import tensorflow.contrib.seq2seq as seq2seq  # pylint: disable=E0611
-from tensorflow.contrib.rnn import GRUCell  # pylint: disable=E0611
-from tensorflow.python.layers.core import Dense  # pylint: disable=E0611
-
+from tensorflow.python.layers.core import Dense # pylint: disable=E0611
 
 class QAModel:
     def __init__(
@@ -32,6 +29,7 @@ class QAModel:
         self._embedding = tf.get_variable(
             'embedding',
             initializer=glove)
+        self._vocabSize = glove.shape[0]
         self._embeddingDimensions = glove.shape[1]
 
         self._documentTokens = tf.placeholder(
@@ -66,6 +64,14 @@ class QAModel:
             tf.int32,
             shape=[None],
             name='decoderLengths')
+        self._useDropout = tf.placeholder_with_default(
+            False, 
+            [], 
+            name="useDropout")
+        self._learningRate = tf.placeholder(
+            tf.float32, 
+            [], 
+            name="learningRate")
 
         self._START_TOKEN = startToken
         self._END_TOKEN = endToken
@@ -75,13 +81,24 @@ class QAModel:
         self._modelPath = modelPath
         self._modelName = modelName
 
-    def CreateComputationGraph(self):
+    def CreateComputationGraph(
+            self,
+            dropoutProbability: float):
+        self._dropoutKeepProb = tf.cond(
+            self._useDropout,
+            lambda: tf.constant(1-dropoutProbability),
+            lambda: tf.constant(1.0),
+            name="dropoutKeepProb")
+
         # construct bidirectional neural network with GRU cells
         documentEmbedding = tf.nn.embedding_lookup(
-            self._embedding,
+            self._MakeFancyEmbeddingLayer(
+                self._embedding, 
+                self._vocabSize, 
+                self._dropoutKeepProb),
             self._documentTokens)
-        forwardCell = GRUCell(self._embeddingDimensions)
-        backwardCell = GRUCell(self._embeddingDimensions)
+        forwardCell = tf.contrib.rnn.GRUCell(self._embeddingDimensions)
+        backwardCell = tf.contrib.rnn.GRUCell(self._embeddingDimensions)
         answerOutputs, _ = tf.nn.bidirectional_dynamic_rnn(
             forwardCell,
             backwardCell,
@@ -98,7 +115,7 @@ class QAModel:
         answerMask = tf.sequence_mask(
             self._documentLengths,
             dtype=tf.float32)
-        answerLoss = seq2seq.sequence_loss(
+        answerLoss = tf.contrib.seq2seq.sequence_loss(
             logits=self._answerLogits,
             targets=self._answerLabels,
             weights=answerMask,
@@ -109,7 +126,10 @@ class QAModel:
             self._encoderInputMask,
             answerOutputs,
             name='encoderInputs')
-        encoderCell = GRUCell(forwardCell.state_size + backwardCell.state_size)
+        encoderCell = tf.nn.rnn_cell.DropoutWrapper(
+            tf.contrib.rnn.GRUCell(forwardCell.state_size + backwardCell.state_size),
+            input_keep_prob=self._dropoutKeepProb,
+            output_keep_prob=self._dropoutKeepProb)
         _, self._encoderState = tf.nn.dynamic_rnn(
             encoderCell,
             encoderInputs,
@@ -119,28 +139,35 @@ class QAModel:
 
         # create the decoder
         decoderEmbedding = tf.nn.embedding_lookup(
-            self._embedding,
+            self._MakeFancyEmbeddingLayer(
+                self._embedding, 
+                self._vocabSize, 
+                self._dropoutKeepProb),
             self._decoderInputs)
-        trainingHelper = seq2seq.TrainingHelper(
+        trainingHelper = tf.contrib.seq2seq.TrainingHelper(
             decoderEmbedding,
             self._decoderLengths)
-        self._projection = Dense(
+        self._projection = Dense( 
             self._embedding.shape[0],
             use_bias=False)
-        self._decoderCell = GRUCell(encoderCell.state_size)
-        decoder = seq2seq.BasicDecoder(
+        self._decoderCell = tf.nn.rnn_cell.DropoutWrapper(
+            tf.contrib.rnn.GRUCell(encoderCell.state_size), 
+            input_keep_prob=self._dropoutKeepProb,
+            output_keep_prob=self._dropoutKeepProb)
+        
+        decoder = tf.contrib.seq2seq.BasicDecoder(
             self._decoderCell,
             trainingHelper,
             initial_state=self._encoderState, 
             output_layer=self._projection)
-        decoderOutputs, _, _ = seq2seq.dynamic_decode(
+        decoderOutputs, _, _ = tf.contrib.seq2seq.dynamic_decode(
             decoder,
             scope='decoder')
         decoderOutputs = decoderOutputs.rnn_output
         questionMask = tf.sequence_mask(
             self._decoderLengths,
             dtype=tf.float32)
-        questionLoss = seq2seq.sequence_loss(
+        questionLoss = tf.contrib.seq2seq.sequence_loss(
             logits=decoderOutputs,
             targets=self._decoderLabels,
             weights=questionMask,
@@ -154,28 +181,52 @@ class QAModel:
         
         return self
 
+    def _MakeFancyEmbeddingLayer(
+            self,
+            embedding,
+            vocabularySize,
+            keepProbability):
+        return tf.nn.dropout(
+            embedding, 
+            keep_prob=keepProbability, 
+            noise_shape=[vocabularySize, 1])
+
+    # unused at current; cannot get dimensionality to match
+    def _MakeFancyGRUCell(
+            self,
+            gruUnits,
+            keepProbability,
+            numberOfHiddenLayers):
+        cells = []
+        for _ in range(numberOfHiddenLayers):
+            cell = tf.nn.rnn_cell.GRUCell(gruUnits)
+            cell = tf.nn.rnn_cell.DropoutWrapper(
+                cell, 
+                input_keep_prob=keepProbability, 
+                output_keep_prob=keepProbability)
+            cells.append(cell)
+        return tf.nn.rnn_cell.MultiRNNCell(cells)
+
     def Train(
             self, 
             trainingDataGenerator, 
             numberOfEpochs: int,
-            minimumTokenCount: int = None,
-            maxIterations: int = None):
+            learningRate: float,
+            minimumTokenCount: int = 0):
         if numberOfEpochs < 1:
             raise ValueError('Must train with 1 or more epochs')
-            
-        if self._loss is None:
-            self.CreateComputationGraph()
 
         tf.summary.scalar(
             'loss', 
             self._loss)
         merged = tf.summary.merge_all()
 
-        optimizer = tf.train.AdamOptimizer().minimize(self._loss)
+        optimizer = (tf.train
+                        .AdamOptimizer(learningRate)
+                        .minimize(self._loss))
 
         saver = tf.train.Saver()
         self._session = tf.Session()
-
         epoch = self._loadIntermediateModel(saver)
 
         numberOfBatches = sum([1 for i in trainingDataGenerator()])
@@ -188,8 +239,7 @@ class QAModel:
                 desc='Iterations',
                 unit='iteration')
             for batch in batches:
-                if maxIterations and iteration >= maxIterations:
-                    break
+                loss = 0
                 iteration += 1
                 logText = 'iteration: {0}  token count: {1}  total document length: {2}'.format(
                     iteration,
@@ -207,7 +257,9 @@ class QAModel:
                             self._encoderLengths: batch.answers.lengths,
                             self._decoderInputs: batch.questions.inputTokens,
                             self._decoderLabels: batch.questions.outputTokens,
-                            self._decoderLengths: batch.questions.lengths
+                            self._decoderLengths: batch.questions.lengths,
+                            self._useDropout: True,
+                            self._learningRate: learningRate
                         })
                 else:
                     self._batchLogger.debug('{0} -> SKIPPED BATCH'.format(logText))
@@ -247,46 +299,40 @@ class QAModel:
             self._session.run(tf.global_variables_initializer())
         return largestEpoch
 
-    def Predict(
-            self, 
-            testData, 
-            collapse_documents, 
-            expand_answers, 
-            maximumIterations: int = 16):
-        if self._session is None:
-            self.CreateComputationGraph()
-            saver = tf.train.Saver()
-            self._session = tf.Session()
-            self._loadIntermediateModel(saver)
-
-        batch = collapse_documents(next(testData))
-
+    def PredictAnswers(
+            self,
+            batch):
+        self._session = tf.Session()
+        self._loadIntermediateModel(tf.train.Saver())
+        
         answers = self._session.run(
             self._answerLogits, 
             {
                 self._documentTokens: batch.documents.tokens,
                 self._documentLengths: batch.documents.lengths,
+                self._useDropout: False
             })
-        answers = np.argmax(
+
+        return np.argmax(
             answers, 
             2)
 
-        batch = expand_answers(
-            batch, 
-            answers)
-
-        helper = seq2seq.GreedyEmbeddingHelper(
+    def PredictQuestions(
+            self,
+            batch,
+            maximumIterations: int=16):
+        helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
             self._embedding, 
             start_tokens=tf.fill(
                 dims=[batch.size], 
                 value=self._START_TOKEN), 
             end_token=self._END_TOKEN)
-        decoder = seq2seq.BasicDecoder(
+        decoder = tf.contrib.seq2seq.BasicDecoder(
             self._decoderCell,
             helper,
             self._encoderState,
             output_layer=self._projection)
-        decoderOutputs, _, _ = seq2seq.dynamic_decode(
+        decoderOutputs, _, _ = tf.contrib.seq2seq.dynamic_decode(
             decoder,
             maximum_iterations=maximumIterations)
 
@@ -298,10 +344,11 @@ class QAModel:
                 self._answerLabels: batch.answers.labels,
                 self._encoderInputMask: batch.answers.masks,
                 self._encoderLengths: batch.answers.lengths,
+                self._useDropout: False
             })
         questions[:, :, self._UNKNOWN_TOKEN] = 0
         questions = np.argmax(
             questions, 
             2)
 
-        return batch, questions
+        return questions

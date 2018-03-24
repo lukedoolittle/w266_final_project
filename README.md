@@ -2,6 +2,8 @@
 
 The model is based on the design described in [this paper](https://arxiv.org/pdf/1706.01450.pdf) and the initial [project proposal](https://docs.google.com/document/d/1VYZ7kXDQxtpvXVGGQX1S2Q7SgyMtEMuIkSm0S468Lf0/edit) describes the differences.
 
+An updated report is available [here](https://docs.google.com/document/d/1RwLXYNd0J-qpwddoGeKAKEWJ53vJXVYvsT1X2h90Uls/edit?usp=sharing)
+
 ## Running
 
 ### Option 1
@@ -13,7 +15,7 @@ source activate tensorflow_p36
 git clone https://github.com/lukedoolittle/w266_final_project.git
 cd w266_final_project
 pip install -r requirements.txt
-wget -P data/ https://s3.amazonaws.com/projectburton/glove.6B.100d.txt
+wget -P data/ https://s3.amazonaws.com/projectburton/glove.6B.300d.txt
 ```
 
 ### Option 2
@@ -34,15 +36,18 @@ NOTE: the requirements.txt doesn't list Tensorflow despite that being required t
 ### Training
 
 ```bash
-wget -P data/ https://s3.amazonaws.com/projectburton/train.csv
-python src/runner.py --epochs 5 --batchsize 64
+wget -P data/ https://s3.amazonaws.com/projectburton/cnn_data/train.csv
+python src/runner.py --mode=train --epochs 5 --maxbatchsize 32
 ```
 
 ### Testing
 
 ```bash
-wget -P data/ https://s3.amazonaws.com/projectburton/test.csv
-???
+wget -P data/ https://s3.amazonaws.com/projectburton/cnn_data/test.csv
+wget -P src/model/ https://s3.amazonaws.com/projectburton/basic_model/model-5.data-00000-of-00001
+wget -P src/model/ https://s3.amazonaws.com/projectburton/basic_model/model-5.index
+wget -P src/model/ https://s3.amazonaws.com/projectburton/basic_model/model-5.meta
+python src/runner.py --mode=test
 ```
 
 ## Data
@@ -57,7 +62,7 @@ For the training data the answers must come directly from the text, so the forma
 
 * CNN (preformatted): [Train](https://s3.amazonaws.com/projectburton/train.csv) (350MB), [Test](https://s3.amazonaws.com/projectburton/test.csv) (18MB), [Dev](https://s3.amazonaws.com/projectburton/dev.csv) (18MB)
 * SQuAD: [Train](https://s3.amazonaws.com/projectburton/train-v1.1.json) (28.9MB), [Dev](https://s3.amazonaws.com/projectburton/dev-v1.1.json) (4.6MB)
-* MARCO: [Train]() (3.39GB), [TrainAnswers](https://s3.amazonaws.com/projectburton/train_v2.0_well_formed.json) (551.9MB), [Dev](https://s3.amazonaws.com/projectburton/dev_v2.0.json) (423.7MB), [DevAnswers](https://s3.amazonaws.com/projectburton/dev_v2.0_well_formed.json) (68.9MB), [Eval](https://s3.amazonaws.com/projectburton/eval_v2.0.json) (402.9MB), [EvalAnswers](https://s3.amazonaws.com/projectburton/evalpublicwellformed.json) (63.7MB)
+* MARCO: [Train](https://s3.amazonaws.com/projectburton/marco_data/train_v2.0.json) (3.39GB), [TrainAnswers](https://s3.amazonaws.com/projectburton/train_v2.0_well_formed.json) (551.9MB), [Dev](https://s3.amazonaws.com/projectburton/dev_v2.0.json) (423.7MB), [DevAnswers](https://s3.amazonaws.com/projectburton/dev_v2.0_well_formed.json) (68.9MB), [Eval](https://s3.amazonaws.com/projectburton/eval_v2.0.json) (402.9MB), [EvalAnswers](https://s3.amazonaws.com/projectburton/evalpublicwellformed.json) (63.7MB)
 
 ## Embeddings
 

@@ -19,10 +19,10 @@ class QAData:
         self._embedding = embedding
         self._maxBatchCount = maxBatchCount
 
-    def expand_answers(
+    def getAnswers(
             self,
             batch: InputBatch,
-            answers):
+            answers) -> InputBatch:
         stories = []
 
         for i in range(batch.size):
