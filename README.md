@@ -28,7 +28,7 @@ source activate qamodel
 git clone https://github.com/lukedoolittle/w266_final_project.git
 cd w266_final_project
 pip install -r requirements.txt
-wget -P data/ https://s3.amazonaws.com/projectburton/embeddings/glove.6B.100d.txt
+wget -P data/ https://s3.amazonaws.com/projectburton/embeddings/glove.6B.300d.txt
 ```
 
 NOTE: the requirements.txt doesn't list Tensorflow despite that being required to run the project. If the environment doesn't have a native Tensorflow installation then you can install it using pip.
