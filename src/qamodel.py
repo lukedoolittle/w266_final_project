@@ -126,6 +126,7 @@ class QAModel:
             self._encoderInputMask,
             answerOutputs,
             name='encoderInputs')
+        # encoderCell = tf.nn.rnn_cell.MultiRNNCell([tf.contrib.rnn.GRUCell(forwardCell.state_size + backwardCell.state_size)], state_is_tuple=True)
         encoderCell = tf.nn.rnn_cell.DropoutWrapper(
             tf.contrib.rnn.GRUCell(forwardCell.state_size + backwardCell.state_size),
             input_keep_prob=self._dropoutKeepProb,
@@ -150,6 +151,7 @@ class QAModel:
         self._projection = Dense( 
             self._embedding.shape[0],
             use_bias=False)
+        # self._decoderCell = tf.nn.rnn_cell.MultiRNNCell([tf.contrib.rnn.GRUCell(encoderCell.state_size)], state_is_tuple=True)
         self._decoderCell = tf.nn.rnn_cell.DropoutWrapper(
             tf.contrib.rnn.GRUCell(encoderCell.state_size), 
             input_keep_prob=self._dropoutKeepProb,
@@ -159,6 +161,7 @@ class QAModel:
             self._decoderCell,
             trainingHelper,
             initial_state=self._encoderState, 
+            #initial_state=[self._encoderState for _ in range(1)],
             output_layer=self._projection)
         decoderOutputs, _, _ = tf.contrib.seq2seq.dynamic_decode(
             decoder,
@@ -230,6 +233,7 @@ class QAModel:
         epoch = self._loadIntermediateModel(saver)
 
         numberOfBatches = sum([1 for i in trainingDataGenerator()])
+        epochLosses = []
 
         for epoch in trange(epoch + 1, numberOfEpochs + 1, desc='Epochs', unit='epoch'):
             iteration = 0
@@ -264,6 +268,13 @@ class QAModel:
                 else:
                     self._batchLogger.debug('{0} -> SKIPPED BATCH'.format(logText))
                 batches.set_postfix(loss=loss)
+
+            epochLosses.append(loss)
+            trackedEpochs = len(epochLosses)
+            if (trackedEpochs > 2 and 
+                (epochLosses[trackedEpochs-1] > epochLosses[trackedEpochs-2]) and 
+                (epochLosses[trackedEpochs-2] > epochLosses[trackedEpochs-3])):
+                learningRate *= 0.5
 
             saver.save(
                 self._session,

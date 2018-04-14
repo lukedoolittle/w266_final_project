@@ -15,7 +15,7 @@ source activate tensorflow_p36
 git clone https://github.com/lukedoolittle/w266_final_project.git
 cd w266_final_project
 pip install -r requirements.txt
-wget -P data/ https://s3.amazonaws.com/projectburton/glove.6B.300d.txt
+wget -P data/ https://s3.amazonaws.com/projectburton/embeddings/glove.6B.300d.txt
 ```
 
 ### Option 2

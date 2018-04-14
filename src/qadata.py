@@ -70,7 +70,7 @@ class QAData:
             answerDelimiter: str = ',') -> List[List[Story]]:
         allStories = {}
 
-        with open(path) as file_:
+        with open(path, encoding='utf8') as file_:
             reader = csv.reader(file_)
             next(reader, None)
             for row in reader:

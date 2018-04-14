@@ -67,7 +67,7 @@ class WordEmbedding:
     def LoadEmbeddings(
             self,
             embeddingFilePath: str):
-        with open(embeddingFilePath) as fileHandle:
+        with open(embeddingFilePath, encoding='utf8') as fileHandle:
             dimensions = len(fileHandle.readline().split(' ')) - 1
             fileHandle.seek(0)
             vocabularySize = sum(1 for line in fileHandle) + 3
