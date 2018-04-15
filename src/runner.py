@@ -123,7 +123,7 @@ elif args.mode == 'predict':
                                         batch, 
                                         answers))
 
-    for i in range(batch.size):
+    for i in range(len(questions)):
         question = itertools.takewhile(
             lambda t: t != embeddings.END_TOKEN,
             questions[i])
